@@ -1,0 +1,6 @@
+env/
+build/
+dist/
+DX.py.egg-info/
+__pycache__
+*.json
