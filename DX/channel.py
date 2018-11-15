@@ -1,5 +1,7 @@
 import binascii
 import json
+import time
+
 import requests
 from web3 import Web3, HTTPProvider
 
@@ -15,6 +17,8 @@ class Channel:
     API_SIGNATURE_HEADER = "X-DX-Signature"
 
     def _open_new_channel(self):
+        print("Opening channel, please wait... It might take a few minutes depending on network conditions.")
+
         # Channel is not open, check for sufficient balance.
         balance = self.contracts["token"].call_function(
             fun="balanceOf",
@@ -27,12 +31,18 @@ class Channel:
             raise RuntimeError("failed to open channel: deposit greater than balance")
 
         # Approve allowance for channel manager contract.
-        # TODO Listen for Approval and ChannelOpened events.
         self.contracts["token"].send_function(
             fun="approve",
             fun_argt=["address", "uint256"],
             fun_argv=[self.addresses["channel"], self.deposit],
             verify=True
+        )
+
+        self.contracts["token"].wait_for_event(
+            ev="Approval",
+            ev_argt=["address", "address", "uint256"],
+            ev_argt_indexed=["address", "address"],
+            ev_argv_indexed=[self.wallet.checksum_address, self.addresses["channel"]]
         )
 
         # Confirm allowance.
@@ -47,18 +57,38 @@ class Channel:
             raise RuntimeError("failed to open channel: deposit greater than allowance")
 
         # Open channel.
-        tx = self.contracts["channel"].send_function(
+        self.contracts["channel"].send_function(
             fun="openChannel",
             fun_argt=["address", "uint256"],
             fun_argv=[self.addresses["node"], self.deposit],
             verify=True
         )
 
+        # TODO: Modify ChannelOpened to use indexed arguments for the addresses.
+        self.contracts["channel"].wait_for_event(
+            ev="ChannelOpened",
+            ev_argt=["address", "address", "uint256", "uint64"],
+            ev_rett=["address", "address", "uint256", "uint64"],
+            ev_callback=lambda ev: ev[0] == self.addresses["node"].lower() and ev[1] == self.wallet.address
+        )
+
+        # Allow the node to sync the event as well.
+        node_syncing = True
+        while node_syncing:
+            r = requests.get(f"{self.node}/semantic/status",
+                headers = { Channel.API_ADDRESS_HEADER: self.wallet.checksum_address }
+            )
+
+            if r.status_code == requests.codes.ok:
+                node_syncing = False
+
+            time.sleep(2)
+
         self.open = True
 
     def _open_existing_channel(self):
         # Fetch latest balance.
-        r = requests.get(self.node + "/channel/receipt",
+        r = requests.get(f"{self.node}/channel/receipt",
             headers = { Channel.API_ADDRESS_HEADER: self.wallet.checksum_address }
         )
         if r.status_code != requests.codes.ok:
@@ -79,7 +109,7 @@ class Channel:
 
         # Get addresses from node.
         # FIXME Unsafe, temporary way to avoid updating contract addresses manually in SDK.
-        r = requests.get(self.node + "/channel/metadata")
+        r = requests.get(f"{self.node}/channel/metadata")
         if r.status_code != requests.codes.ok:
             raise RuntimeError("failed to open channel: unable to fetch metadata from node")
 
@@ -110,7 +140,10 @@ class Channel:
         else:
             self._open_new_channel()
 
-    def query(self, endpoint, params = {}, model = "techindustry", metadata=False, verify=False):
+    def query(self, endpoint, params=None, model ="techindustry", metadata=False, verify=False):
+        if params is None:
+            params = {}
+
         if not self.open:
             return None
 
@@ -118,7 +151,7 @@ class Channel:
         if self.receipt:
             headers[Channel.API_SIGNATURE_HEADER] = sign_receipt(self.web3, self.wallet, self.receipt)
 
-        r = requests.get(self.node + "/" + endpoint,
+        r = requests.get(f"{self.node}/{endpoint}",
                 headers=headers,
                 params={"model": model, **params}
         )
@@ -151,18 +184,18 @@ class Channel:
         str = ""
         if self.receipt: str += "Latest balance:\n"
         for key in self.receipt:
-            str += "    " + key.capitalize() + "\n"
+            str += f"    {key.capitalize()}\n"
             for addr, amount in self.receipt[key].items():
-                str += "        DXN {0:<6} → {1}\n".format(dei2dxn(amount), addr)
-        str += "Total:  DXN {0:<6}".format(dei2dxn(self.balance()))
+                str += f"        DXN {dei2dxn(amount):<6} → {addr}\n"
+        str += f"Total:  DXN {dei2dxn(self.balance()):<6}"
 
         print(draw_box("The DX Network", str))
 
     def print_state(self):
         if self.open:
-            str = "Channel opened for {0}\nDeposit amount: DXN {1:<6}".format(self.wallet.checksum_address, dei2dxn(self.deposit))
+            str = f"Channel opened for {self.wallet.checksum_address}\nDeposit amount: DXN {dei2dxn(self.deposit):<6}"
         else:
-            str = "Channel is closed\nTX hash is 0x{0}".format(self.hash)
+            str = f"Channel is closed\nTX hash is 0x{self.hash}"
 
         print(draw_box("The DX Network", str, 81))
 
@@ -175,7 +208,7 @@ class Channel:
             headers[Channel.API_SIGNATURE_HEADER] = sign_receipt(self.web3, self.wallet, self.receipt)
 
         # Request closing signature from node.
-        r = requests.get(self.node + "/channel/close", headers=headers)
+        r = requests.get(f"{self.node}/channel/close", headers=headers)
         if r.status_code != requests.codes.ok:
             print(r.text)
             return
@@ -198,6 +231,6 @@ class Channel:
 
         self.open = False
 
-def open(wallet, node, deposit, provider="http://127.0.0.1:8565"):
+def open(wallet, node, deposit, provider="https://ropsten.dx.network/json-rpc"):
     return Channel(wallet, node, dxn2dei(deposit), provider)
 

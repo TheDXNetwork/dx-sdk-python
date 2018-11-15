@@ -4,8 +4,8 @@ import DX
 # Open channel to DX
 #
 wallet = DX.wallet.load("wallet_file.json", "password")
-channel = DX.channel.open(wallet, node="https://api-alpha.dx.network", deposit=50)
-channel.print_state();
+channel = DX.channel.open(wallet, node="https://api-beta.dx.network", deposit=50)
+channel.print_state()
 
 #
 # Tech Industry search (https://docs.dx.network/#search-organizations)
@@ -57,4 +57,4 @@ channel.print_balance()
 #
 channel.settle()
 
-channel.print_state();
+channel.print_state()

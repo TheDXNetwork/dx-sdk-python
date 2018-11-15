@@ -6,7 +6,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="DX.py",
-    version="0.3.0",
+    version="0.3.1",
     description="Python SDK for the DX Network, the world's first real-time marketplace for structured data",
     url="https://dx.network",
     author="The DX Network",

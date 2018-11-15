@@ -15,12 +15,12 @@ def highlight(str):
 def draw_box(title, str, linelen=69):
     titlelen = len(title)
     linecount = int((linelen - titlelen) / 2) - 2
-    ret = "┏" + "━" * linecount + " " + title + " " + "━" * (linecount + 1 if titlelen % 2 == 0 else 0) + "┓\n"
+    ret = f"┏{'━' * linecount} {title} {'━' * (linecount + 1 if titlelen % 2 == 0 else 0)}┓\n"
 
     lines = str.split("\n")
     for line in lines:
-        ret += "┃ " + line + " " * (linelen - len(line) - 4) + " ┃\n"
-    ret += "┗" + "━" * (linelen - 2) + "┛"
+        ret += f"┃ {line}{' ' * (linelen - len(line) - 4)} ┃\n"
+    ret += f"┗{'━' * (linelen - 2)}┛"
 
     return ret
 
